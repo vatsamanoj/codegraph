@@ -1,7 +1,7 @@
 // cg — query the code graph.
 //   cg status | reindex
 //   cg def <Name> | cg refs <Name> | cg callers <Name>
-//   cg text <string> [--regex]                               (grep source; each hit tagged with its enclosing symbol)
+//   cg text <string> [--regex] [--all]                        (grep source, hit->enclosing symbol; --all also scans .json/.yaml/.sql seam files)
 //   cg refs <Name> --precise | cg callers <Name> --precise   (route C# to the warm Roslyn server)
 //   cg impl <Type>                                            (implementations/derived/overrides — Roslyn)
 //   cg impact <Name>                                          (refs + cross-language seam scan + checklist)
@@ -14,7 +14,7 @@ const CFG = loadConfig();
 const TREE = CFG.ports.treeSitter, ROSLYN = CFG.ports.roslyn, TSP = CFG.ports.ts;
 const argv = process.argv.slice(2);
 const precise = argv.includes('--precise');
-const [cmd, name] = argv.filter(a => a !== '--precise');
+const [cmd, name] = argv.filter(a => !a.startsWith('--'));
 const short = (f) => { const nf = f.replace(/\\/g, '/'); for (const r of CFG.roots) { const nr = r.replace(/\\/g, '/'); if (nf.toLowerCase().startsWith(nr.toLowerCase())) return nf.slice(nr.length + 1); } return nf; };
 
 function get(pathname, port) {
@@ -142,7 +142,8 @@ const run = async () => {
   }
   if (!name) { console.log('usage: cg def|refs|callers|impl|impact|schema|text <Name> [--precise]  |  cg status|reindex'); process.exit(1); }
   if (cmd === 'text') {
-    const r = await get(`/text?name=${encodeURIComponent(name)}${argv.includes('--regex') ? '&regex=1' : ''}`, TREE);
+    const qs = `${argv.includes('--regex') ? '&regex=1' : ''}${argv.includes('--all') ? '&all=1' : ''}`;
+    const r = await get(`/text?name=${encodeURIComponent(name)}${qs}`, TREE);
     return printText(name, r.results);
   }
   const tag = precise ? ' [precise]' : '';

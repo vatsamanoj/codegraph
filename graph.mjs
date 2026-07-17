@@ -98,9 +98,8 @@ export class CodeGraph {
     this.fileData.set(file, { defs, refs, calls });
   }
 
-  * walkFiles() {
+  * walkFilesExt(exts) {
     const exc = new Set(this.config.excludeDirs);
-    const exts = this.config.extensions;
     const stack = [...this.config.roots];
     while (stack.length) {
       const dir = stack.pop();
@@ -112,6 +111,7 @@ export class CodeGraph {
       }
     }
   }
+  * walkFiles() { yield* this.walkFilesExt(this.config.extensions); }
 
   async indexAll() { let n = 0; for (const f of this.walkFiles()) { await this.indexFile(f); n++; } return n; }
   stats() { return { files: this.fileData.size, defs: this.defsByName.size, refs: this.refsByName.size, calls: this.callsByName.size }; }
@@ -133,13 +133,17 @@ export class CodeGraph {
   // that isn't an identifier (so /refs can't find it), and tag each hit with its enclosing
   // symbol — the bridge from "a concept named as a string" to a symbol you can then pivot
   // on with /callers or /refs. Literal substring by default (case-insensitive); regex opt-in.
-  textSearch(query, { regex = false, max = 200, ignoreCase = true } = {}) {
+  textSearch(query, { regex = false, max = 200, ignoreCase = true, all = false } = {}) {
     if (!query) return [];
     let re = null;
     if (regex) { try { re = new RegExp(query, ignoreCase ? 'i' : ''); } catch { re = null; } }
     const needle = ignoreCase ? query.toLowerCase() : query;
+    // --all also scans seam files (.json/.yaml/.sql/…): UI labels, i18n-key definitions, DDL,
+    // config keys — string boundaries the code index can't hold. Seam hits have no enclosing
+    // code symbol (not parsed into the graph), so `enclosing` is null for them.
+    const exts = all ? [...new Set([...this.config.extensions, ...(this.config.seamExtensions || [])])] : this.config.extensions;
     const hits = [];
-    for (const file of this.walkFiles()) {
+    for (const file of this.walkFilesExt(exts)) {
       let src; try { src = fs.readFileSync(file, 'utf8'); } catch { continue; }
       if (src.length > 1_500_000) continue;
       if (re) { if (!re.test(src)) continue; } else if ((ignoreCase ? src.toLowerCase() : src).indexOf(needle) === -1) continue;

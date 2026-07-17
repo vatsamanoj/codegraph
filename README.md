@@ -57,6 +57,13 @@ $ cg text tp-vch-date-input
 
 So the workflow is: **`cg text "<the string from the report>"` → read off the enclosing symbol → `cg callers`/`refs`/`impact` that symbol.** Literal substring by default (case-insensitive); `--regex` opts into a JS regexp.
 
+Add **`--all`** to also scan the *seam* files (`.json`, `.yaml`, `.sql`, `.config`, …) — where UI labels, i18n-key definitions, DDL, and config keys live. Those aren't in the code index, so a hit there has no enclosing code symbol, but `--all` is how you find "the screen whose title string is *X*" or "where is this i18n key defined" when the string lives in JSON rather than source:
+
+```
+$ cg text "Opening Trial Balance"          # 0 — the label lives in a locale JSON
+$ cg text "Opening Trial Balance" --all     # found in en.json (+ any code that hardcodes it)
+```
+
 `impact` also greps config/schema/serialization files (`.json`, `.sql`, `.proto`, `.yaml`, …) for the name, because the graph can't link string/JSON/DDL seams — the boundaries where a rename compiles on both sides but breaks at runtime.
 
 ## Lifecycle
