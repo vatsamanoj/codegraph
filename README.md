@@ -69,6 +69,13 @@ tree-sitter grammars ship for: C#, TypeScript/TSX/JS, Python, Go, Rust, Java, Ko
 - **Roslyn** loads the `.sln` into the C# compiler's semantic model and answers `SymbolFinder.FindReferences/FindCallers/FindImplementations` — type-resolved, no false positives. Live-updates changed `.cs`; add/remove sets `dirty` → `cg reindex`.
 - **ts-morph** loads the `tsconfig.json` project into the TypeScript language service and answers `findReferences` / `getImplementations` — type-resolved. Live-refreshes changed `.ts`/`.tsx`.
 
+## Scope of the precise TS layer
+ts-morph loads exactly the files your `tsconfig`'s `include` defines (e.g. `["src"]`). Files outside it — `tests/`, `poc/`, `*.config.ts` — are **not** in the precise TS graph, but they *are* in the fast tree-sitter layer (which indexes every `.ts`/`.tsx`). So `cg refs X` covers them; `cg refs X --precise` covers the app project only.
+
+If your repo uses **TypeScript project references** to split source across multiple composite `tsconfig`s (a real monorepo), point `tsConfig` at the composite root — ts-morph loads the tsconfig you give it and does **not** auto-follow `references` into sibling projects.
+
+Precise resolution is per-language: ts-morph resolves the TS project, Roslyn resolves the C# project. No symbol spans both languages — the frontend↔backend boundary is the JSON/HTTP seam, which `cg impact` surfaces via its seam scan (and the serializer's `PascalCase`⇄`camelCase` mapping means the field *name* differs across the wire, so watch that in the checklist).
+
 ## Limitations
 - Syntactic references (default) are name-scoped — use `--precise` for exact C# / TS.
 - Precise layers cover C# and TypeScript; other languages get the fast syntactic layer only.
