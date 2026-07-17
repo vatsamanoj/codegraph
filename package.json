@@ -1,0 +1,18 @@
+{
+  "name": "codegraph",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Session-scoped code graph: fast tree-sitter refs/impact for any language + a warm Roslyn server for type-exact C#. Plug-and-play per repo.",
+  "scripts": {
+    "setup": "node setup.mjs",
+    "start": "node daemon.mjs start",
+    "stop": "node daemon.mjs stop",
+    "status": "node daemon.mjs status"
+  },
+  "dependencies": {
+    "web-tree-sitter": "0.22.6",
+    "tree-sitter-wasms": "0.1.11",
+    "chokidar": "3.6.0"
+  }
+}
