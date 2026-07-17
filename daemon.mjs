@@ -15,6 +15,8 @@ const CONFIG = loadConfig();
 const META = path.join(HERE, '.daemon.json');
 const ROSLYN_META = path.join(HERE, '.roslyn.json');
 const ROSLYN_DLL = path.join(HERE, 'roslyn', 'bin', 'Release', 'net10.0', 'CodeGraphRoslyn.dll');
+const TS_META = path.join(HERE, '.ts.json');
+const TS_SERVER = path.join(HERE, 'ts', 'server.mjs');
 const LOG = path.join(HERE, 'daemon.log');
 const PORT = CONFIG.ports.treeSitter;
 const cmd = process.argv[2] || 'status';
@@ -44,6 +46,26 @@ function stopRoslyn() {
   const m = readMeta(ROSLYN_META);
   if (m && alive(m.pid)) { try { process.kill(m.pid); } catch {} console.log(`roslyn stopped (pid ${m.pid})`); }
   try { fs.unlinkSync(ROSLYN_META); } catch {}
+}
+
+// Precise TypeScript layer (warm ts-morph server) — spawned when a tsconfig is present.
+function startTs() {
+  if (!CONFIG.tsConfig) return;
+  const m = readMeta(TS_META);
+  if (m && alive(m.pid)) { console.log(`ts already running (pid ${m.pid}, port ${m.port})`); return; }
+  const out = fs.openSync(LOG, 'a');
+  const child = spawn(process.execPath, [TS_SERVER], {
+    detached: true, stdio: ['ignore', out, out], windowsHide: true,
+    env: { ...process.env, CODEGRAPH_TSCONFIG: CONFIG.tsConfig, CODEGRAPH_ROOT: CONFIG.roots[0], CODEGRAPH_TS_PORT: String(CONFIG.ports.ts) },
+  });
+  child.unref();
+  try { fs.writeFileSync(TS_META, JSON.stringify({ pid: child.pid, port: CONFIG.ports.ts, startedAt: Date.now() })); } catch {}
+  console.log(`ts precise server starting (pid ${child.pid}, port ${CONFIG.ports.ts}) — warming tsconfig`);
+}
+function stopTs() {
+  const m = readMeta(TS_META);
+  if (m && alive(m.pid)) { try { process.kill(m.pid); } catch {} console.log(`ts stopped (pid ${m.pid})`); }
+  try { fs.unlinkSync(TS_META); } catch {}
 }
 
 if (cmd === 'serve') {
@@ -88,12 +110,14 @@ if (cmd === 'serve') {
     console.log(`codegraph daemon started (pid ${child.pid}, port ${PORT}) — indexing in background`);
   }
   startRoslyn();
+  startTs();
 
 } else if (cmd === 'stop') {
   const m = readMeta(META);
   if (m && alive(m.pid)) { try { process.kill(m.pid); } catch {} console.log(`codegraph stopped (pid ${m.pid})`); } else console.log('codegraph not running');
   try { fs.unlinkSync(META); } catch {}
   stopRoslyn();
+  stopTs();
 
 } else if (cmd === 'status') {
   const m = readMeta(META);
@@ -103,5 +127,10 @@ if (cmd === 'serve') {
   if (CONFIG.dotnetSolution) {
     if (!rm || !alive(rm.pid)) console.log('roslyn: not running');
     else { try { console.log('roslyn:      ' + await httpGet(CONFIG.ports.roslyn, '/status')); } catch { console.log(`roslyn: pid ${rm.pid} up, warming solution`); } }
+  }
+  const tm = readMeta(TS_META);
+  if (CONFIG.tsConfig) {
+    if (!tm || !alive(tm.pid)) console.log('ts: not running');
+    else { try { console.log('ts:          ' + await httpGet(CONFIG.ports.ts, '/status')); } catch { console.log(`ts: pid ${tm.pid} up, warming tsconfig`); } }
   }
 }

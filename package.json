@@ -11,8 +11,9 @@
     "status": "node daemon.mjs status"
   },
   "dependencies": {
-    "web-tree-sitter": "0.22.6",
+    "chokidar": "3.6.0",
     "tree-sitter-wasms": "0.1.11",
-    "chokidar": "3.6.0"
+    "ts-morph": "^23.0.0",
+    "web-tree-sitter": "0.22.6"
   }
 }

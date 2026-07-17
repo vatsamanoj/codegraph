@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { detectRoot, findSolution } from './config.mjs';
+import { detectRoot, findSolution, findTsConfig } from './config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -16,15 +16,17 @@ const has = (k) => args.includes(k);
 
 const root = path.resolve(arg('--root') || detectRoot());
 const sln = has('--no-roslyn') ? null : findSolution(root);
+const tsConfig = has('--no-ts') ? null : findTsConfig([root]);
 const dotnetOk = (() => { try { execSync('dotnet --version', { stdio: 'ignore' }); return true; } catch { return false; } })();
 
 console.log(`codegraph setup`);
 console.log(`  codebase root : ${root}`);
-console.log(`  solution      : ${sln || '(none — tree-sitter only)'}`);
+console.log(`  solution (C#) : ${sln || '(none)'}`);
+console.log(`  tsconfig (TS) : ${tsConfig || '(none)'}`);
 console.log(`  dotnet SDK    : ${dotnetOk ? 'yes' : 'no'}`);
 
 // 1) local config
-const cfg = { roots: [root], dotnetSolution: sln || null };
+const cfg = { roots: [root], dotnetSolution: sln || null, tsConfig: tsConfig || null };
 fs.writeFileSync(path.join(HERE, 'config.local.json'), JSON.stringify(cfg, null, 2));
 console.log('  wrote config.local.json');
 

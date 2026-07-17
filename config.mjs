@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULTS = {
-  ports: { treeSitter: 47615, roslyn: 47616 },
+  ports: { treeSitter: 47615, roslyn: 47616, ts: 47617 },
   idleShutdownMinutes: 180,
   excludeDirs: ['node_modules', 'bin', 'obj', 'dist', 'build', '.git', '.svn', '.hg', '.vs', '.vscode',
     '.idea', 'out', 'target', 'vendor', 'venv', '.venv', '__pycache__', '.next', '.nuxt', 'coverage',
@@ -40,15 +40,31 @@ export function findSolution(root) {
   return null;
 }
 
+export function findTsConfig(roots) {
+  const skip = new Set(DEFAULTS.excludeDirs);
+  for (const root of roots) {
+    const q = [{ dir: root, depth: 0 }];
+    while (q.length) {
+      const { dir, depth } = q.shift();
+      let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const e of ents) if (e.isFile() && e.name === 'tsconfig.json') return path.join(dir, e.name);
+      if (depth < 2) for (const e of ents) if (e.isDirectory() && !skip.has(e.name)) q.push({ dir: path.join(dir, e.name), depth: depth + 1 });
+    }
+  }
+  return null;
+}
+
 export function loadConfig() {
   const localPath = path.join(HERE, 'config.local.json');
   const local = fs.existsSync(localPath) ? JSON.parse(fs.readFileSync(localPath, 'utf8')) : {};
   const roots = (local.roots && local.roots.length) ? local.roots : [detectRoot()];
   const dotnetSolution = 'dotnetSolution' in local ? local.dotnetSolution : findSolution(roots[0]);
+  const tsConfig = 'tsConfig' in local ? local.tsConfig : findTsConfig(roots);
   return {
     HERE,
     roots,
     dotnetSolution: dotnetSolution || null,
+    tsConfig: tsConfig || null,
     ports: { ...DEFAULTS.ports, ...(local.ports || {}) },
     idleShutdownMinutes: local.idleShutdownMinutes ?? DEFAULTS.idleShutdownMinutes,
     excludeDirs: local.excludeDirs || DEFAULTS.excludeDirs,
