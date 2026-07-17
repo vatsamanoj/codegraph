@@ -60,11 +60,14 @@ export function loadConfig() {
   const roots = (local.roots && local.roots.length) ? local.roots : [detectRoot()];
   const dotnetSolution = 'dotnetSolution' in local ? local.dotnetSolution : findSolution(roots[0]);
   const tsConfig = 'tsConfig' in local ? local.tsConfig : findTsConfig(roots);
+  const localSchema = path.join(HERE, 'schema.json');
+  const schemaJson = 'schemaJson' in local ? local.schemaJson : (fs.existsSync(localSchema) ? localSchema : null);
   return {
     HERE,
     roots,
     dotnetSolution: dotnetSolution || null,
     tsConfig: tsConfig || null,
+    schemaJson: schemaJson || null,
     ports: { ...DEFAULTS.ports, ...(local.ports || {}) },
     idleShutdownMinutes: local.idleShutdownMinutes ?? DEFAULTS.idleShutdownMinutes,
     excludeDirs: local.excludeDirs || DEFAULTS.excludeDirs,

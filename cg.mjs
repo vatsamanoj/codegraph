@@ -69,6 +69,25 @@ async function preciseQuery(sub, sym) {
 }
 const q = (sub) => precise ? preciseQuery(sub, name) : get(`${sub}?name=${encodeURIComponent(name)}`, TREE).then(r => r.results);
 
+// --- relational schema layer (schema.json produced by an EF/DB reflector) ---
+let SCHEMA = null;
+if (CFG.schemaJson) { try { SCHEMA = JSON.parse(fs.readFileSync(CFG.schemaJson, 'utf8')); } catch {} }
+function findTable(n) {
+  if (!SCHEMA) return null;
+  const k = String(n).toLowerCase();
+  return SCHEMA.tables.find(t => t.table.toLowerCase() === k || String(t.entity || '').toLowerCase() === k) || null;
+}
+function printSchema(t) {
+  console.log(`TABLE ${t.table}  (entity ${t.entity || '?'}, ${t.context})`);
+  console.log(`  primary key: ${t.primaryKey.join(', ') || '(none)'}`);
+  const fkCols = new Set(t.foreignKeys.flatMap(f => f.columns));
+  console.log(`  columns (${t.columns.length}):`);
+  for (const c of t.columns) console.log(`    ${c.pk ? 'PK' : (fkCols.has(c.name) ? 'FK' : '  ')} ${c.name}: ${c.type}${c.nullable && !c.type.endsWith('?') ? '?' : ''}`);
+  if (t.foreignKeys.length) { console.log('  foreign keys (out):'); for (const f of t.foreignKeys) console.log(`    ${f.columns.join(',')} -> ${f.refTable}.${(f.refColumns || ['Id']).join(',')}  ${f.inferred ? '(inferred)' : 'ON DELETE ' + f.onDelete}`); }
+  if (t.referencedBy.length) { console.log(`  referenced by (${t.referencedBy.length}):`); for (const r of t.referencedBy) console.log(`    ${r.fromTable}.${r.columns.join(',')}  ${r.onDelete === '(inferred)' ? '(inferred)' : 'ON DELETE ' + r.onDelete}`); }
+  if (t.indexes.length) { console.log('  indexes:'); for (const ix of t.indexes) console.log(`    ${ix.columns.join(',')}${ix.unique ? ' UNIQUE' : ''}`); }
+}
+
 const run = async () => {
   if (cmd === 'status') {
     try { console.log('tree-sitter: ' + JSON.stringify(await get('/status', TREE))); } catch { console.log('tree-sitter: not reachable'); }
@@ -82,8 +101,9 @@ const run = async () => {
     if (CFG.tsConfig) out.ts = await get('/reindex', TSP).catch(() => null);
     return console.log(JSON.stringify(out, null, 2));
   }
-  if (!name) { console.log('usage: cg def|refs|callers|impl|impact <Name> [--precise]  |  cg status|reindex'); process.exit(1); }
+  if (!name) { console.log('usage: cg def|refs|callers|impl|impact|schema <Name> [--precise]  |  cg status|reindex'); process.exit(1); }
   const tag = precise ? ' [precise]' : '';
+  if (cmd === 'schema') { const t = findTable(name); return t ? printSchema(t) : console.log(`no table/entity '${name}' (${SCHEMA ? SCHEMA.tables.length + ' tables loaded' : 'schema.json not configured — see README'})`); }
   if (cmd === 'def') return printList(`Definitions of ${name}${tag}`, await q('/def'));
   if (cmd === 'refs') return printList(`References to ${name}${tag}`, await q('/refs'));
   if (cmd === 'callers') return printList(`Callers of ${name}${tag}`, await q('/callers'));
@@ -96,6 +116,12 @@ const run = async () => {
     const seams = seamScan(name);
     console.log(`\nCross-language seams (${CFG.seamExtensions.join(',')}) (${seams.length})`);
     for (const s of seams.slice(0, 30)) console.log(`  ${s.file}:${s.line}`);
+    const t = findTable(name);
+    if (t) {
+      console.log('\n=== Schema ripple (relational) ===');
+      printSchema(t);
+      console.log('  NOTE: adding/altering a column needs the EF model AND an idempotent ALTER TABLE for existing DBs; a delete cascades per the FKs above.');
+    }
     console.log('\n' + (CFG.impactChecklist || DEFAULT_CHECKLIST));
     return;
   }

@@ -69,6 +69,28 @@ tree-sitter grammars ship for: C#, TypeScript/TSX/JS, Python, Go, Rust, Java, Ko
 - **Roslyn** loads the `.sln` into the C# compiler's semantic model and answers `SymbolFinder.FindReferences/FindCallers/FindImplementations` — type-resolved, no false positives. Live-updates changed `.cs`; add/remove sets `dirty` → `cg reindex`.
 - **ts-morph** loads the `tsconfig.json` project into the TypeScript language service and answers `findReferences` / `getImplementations` — type-resolved. Live-refreshes changed `.ts`/`.tsx`.
 
+## Schema layer (relational impact) — optional
+If a `schema.json` is present, `cg` gains a **relational** view so an entity/table change shows its DB ripple, not just code refs:
+
+```bash
+node cg.mjs schema <Table|Entity>   # PK, columns (PK/FK marked), FKs out, referenced-by (in), indexes
+```
+…and `cg impact <Name>` appends a **Schema ripple** block when the name is a table/entity — the tables that FK *into* it, cascade behavior, and a reminder that a column add/alter needs both the model change and a schema migration for existing DBs.
+
+`schema.json` is **project-supplied** — generate it however fits your stack (EF Core model reflection, a DB `information_schema`/`PRAGMA` dump, or by hand). codegraph just consumes it. Point `config.local.json`'s `schemaJson` at the file, or drop it as `schema.json` next to the tool. Format:
+
+```json
+{ "tables": [ {
+  "table": "Ledgers", "entity": "Ledger", "context": "TenantDbContext",
+  "primaryKey": ["Id"],
+  "columns": [ { "name": "Id", "type": "Guid", "nullable": false, "pk": true, "fk": false }, … ],
+  "foreignKeys": [ { "columns": ["GroupId"], "refTable": "AccountGroups", "refColumns": ["Id"], "onDelete": "Cascade", "inferred": false } ],
+  "referencedBy": [ { "fromTable": "Vouchers", "columns": ["LedgerId"], "onDelete": "Restrict" } ],
+  "indexes": [ { "columns": ["Alias"], "unique": true } ]
+} ] }
+```
+FKs may be `"inferred": true` — when the code uses loose `XxxId` id columns without declared relationships, a reflector can infer edges from naming (`CompanyId → Companies`). A ready-made **EF Core reflector** example (reads `DbContext.Model`, no DB connection needed) ships separately; adapt it to your ORM.
+
 ## Scope of the precise TS layer
 ts-morph loads exactly the files your `tsconfig`'s `include` defines (e.g. `["src"]`). Files outside it — `tests/`, `poc/`, `*.config.ts` — are **not** in the precise TS graph, but they *are* in the fast tree-sitter layer (which indexes every `.ts`/`.tsx`). So `cg refs X` covers them; `cg refs X --precise` covers the app project only.
 

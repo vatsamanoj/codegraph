@@ -10,3 +10,4 @@ config.local.json
 .ts.json
 *.log
 codegraph.db
+schema.json
