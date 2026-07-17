@@ -58,6 +58,8 @@ tree-sitter grammars ship for: C#, TypeScript/TSX/JS, Python, Go, Rust, Java, Ko
   "roots": ["C:/path/to/repo"],
   "dotnetSolution": "C:/path/to/repo/App.sln",
   "tsConfig": "C:/path/to/repo/tsconfig.json",
+  "schemaJson": "C:/path/to/repo/schema.json",
+  "schemaPatchFiles": ["src/Persistence/Patches"],
   "ports": { "treeSitter": 47615, "roslyn": 47616, "ts": 47617 },
   "impactChecklist": "…optional project-specific checklist…"
 }
@@ -90,6 +92,8 @@ node cg.mjs schema <Table|Entity>   # PK, columns (PK/FK marked), FKs out, refer
 } ] }
 ```
 FKs may be `"inferred": true` — when the code uses loose `XxxId` id columns without declared relationships, a reflector can infer edges from naming (`CompanyId → Companies`). A ready-made **EF Core reflector** example (reads `DbContext.Model`, no DB connection needed) ships separately; adapt it to your ORM.
+
+**Existing-DB migration check.** If your app upgrades *live* databases with startup DDL patches (idempotent `ALTER TABLE ADD COLUMN` / `CREATE TABLE IF NOT EXISTS`) rather than full migrations, point `schemaPatchFiles` at the file(s)/dir holding them. Then `cg schema <Table>` reports which columns have an ALTER patch vs not, and **`cg impact <Column>` says whether that column's patch is FOUND or MISSING** — catching the "added a column but forgot the patch → *no such column* on customer data" bug class before it ships.
 
 ## Scope of the precise TS layer
 ts-morph loads exactly the files your `tsconfig`'s `include` defines (e.g. `["src"]`). Files outside it — `tests/`, `poc/`, `*.config.ts` — are **not** in the precise TS graph, but they *are* in the fast tree-sitter layer (which indexes every `.ts`/`.tsx`). So `cg refs X` covers them; `cg refs X --precise` covers the app project only.

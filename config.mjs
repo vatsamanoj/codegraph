@@ -68,6 +68,7 @@ export function loadConfig() {
     dotnetSolution: dotnetSolution || null,
     tsConfig: tsConfig || null,
     schemaJson: schemaJson || null,
+    schemaPatchFiles: local.schemaPatchFiles || null,   // files/dirs holding idempotent ALTER/CREATE DDL for existing DBs
     ports: { ...DEFAULTS.ports, ...(local.ports || {}) },
     idleShutdownMinutes: local.idleShutdownMinutes ?? DEFAULTS.idleShutdownMinutes,
     excludeDirs: local.excludeDirs || DEFAULTS.excludeDirs,

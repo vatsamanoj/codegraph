@@ -77,6 +77,20 @@ function findTable(n) {
   const k = String(n).toLowerCase();
   return SCHEMA.tables.find(t => t.table.toLowerCase() === k || String(t.entity || '').toLowerCase() === k) || null;
 }
+function findColumn(n) {
+  if (!SCHEMA) return [];
+  const k = String(n).toLowerCase();
+  return SCHEMA.tables.filter(t => t.columns.some(c => c.name.toLowerCase() === k)).map(t => t.table);
+}
+// schema-patch coverage: which columns/tables have an idempotent ALTER/CREATE so EXISTING (live) DBs upgrade
+let PATCH = '';
+function patchFilesOf(entry) {
+  try { const st = fs.statSync(entry); if (st.isDirectory()) return fs.readdirSync(entry).filter(n => /\.(cs|sql)$/i.test(n)).map(n => path.join(entry, n)); return [entry]; } catch { return []; }
+}
+if (CFG.schemaPatchFiles) for (const e of CFG.schemaPatchFiles) for (const f of patchFilesOf(e)) { try { PATCH += fs.readFileSync(f, 'utf8') + '\n'; } catch {} }
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const hasColumnPatch = (col) => !!PATCH && new RegExp('ADD\\s+COLUMN\\s+["\'\\[\\\\]*' + reEsc(col) + '\\b', 'i').test(PATCH);
+const hasTablePatch = (tbl) => !!PATCH && new RegExp('CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+["\'\\[\\\\]*' + reEsc(tbl) + '\\b', 'i').test(PATCH);
 function printSchema(t) {
   console.log(`TABLE ${t.table}  (entity ${t.entity || '?'}, ${t.context})`);
   console.log(`  primary key: ${t.primaryKey.join(', ') || '(none)'}`);
@@ -86,6 +100,15 @@ function printSchema(t) {
   if (t.foreignKeys.length) { console.log('  foreign keys (out):'); for (const f of t.foreignKeys) console.log(`    ${f.columns.join(',')} -> ${f.refTable}.${(f.refColumns || ['Id']).join(',')}  ${f.inferred ? '(inferred)' : 'ON DELETE ' + f.onDelete}`); }
   if (t.referencedBy.length) { console.log(`  referenced by (${t.referencedBy.length}):`); for (const r of t.referencedBy) console.log(`    ${r.fromTable}.${r.columns.join(',')}  ${r.onDelete === '(inferred)' ? '(inferred)' : 'ON DELETE ' + r.onDelete}`); }
   if (t.indexes.length) { console.log('  indexes:'); for (const ix of t.indexes) console.log(`    ${ix.columns.join(',')}${ix.unique ? ' UNIQUE' : ''}`); }
+  if (PATCH) {
+    const patched = t.columns.filter(c => hasColumnPatch(c.name)).map(c => c.name);
+    const noPatch = t.columns.filter(c => !hasColumnPatch(c.name) && !t.primaryKey.includes(c.name)).map(c => c.name);
+    console.log('  existing-DB schema patch (idempotent ALTER/CREATE — for LIVE customer DBs):');
+    console.log(`    table CREATE-IF-NOT-EXISTS: ${hasTablePatch(t.table) ? 'FOUND' : 'not found (a NEW table needs one, or existing DBs won\'t have it)'}`);
+    console.log(`    columns WITH an ALTER patch (${patched.length}): ${patched.join(', ') || '(none)'}`);
+    console.log(`    columns with NO ALTER patch (${noPatch.length}): ${noPatch.slice(0, 40).join(', ')}${noPatch.length > 40 ? ', …' : ''}`);
+    console.log('    ! a column added AFTER release must appear in the WITH list, else live DBs fail "no such column".');
+  }
 }
 
 const run = async () => {
@@ -121,6 +144,13 @@ const run = async () => {
       console.log('\n=== Schema ripple (relational) ===');
       printSchema(t);
       console.log('  NOTE: adding/altering a column needs the EF model AND an idempotent ALTER TABLE for existing DBs; a delete cascades per the FKs above.');
+    } else if (PATCH) {
+      const inTables = findColumn(name);
+      if (inTables.length) {
+        console.log('\n=== Schema-patch check (column) ===');
+        console.log(`  '${name}' is a column on: ${inTables.join(', ')}`);
+        console.log(`  idempotent ALTER patch for '${name}': ${hasColumnPatch(name) ? 'FOUND ✓' : "MISSING — if you just added this column, LIVE customer DBs need an ALTER TABLE ADD COLUMN or they fail \"no such column\""}`);
+      }
     }
     console.log('\n' + (CFG.impactChecklist || DEFAULT_CHECKLIST));
     return;
