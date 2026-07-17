@@ -7,5 +7,6 @@ roslyn/obj/
 config.local.json
 .daemon.json
 .roslyn.json
+.ts.json
 *.log
 codegraph.db
