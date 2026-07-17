@@ -1,6 +1,7 @@
 // cg — query the code graph.
 //   cg status | reindex
 //   cg def <Name> | cg refs <Name> | cg callers <Name>
+//   cg text <string> [--regex]                               (grep source; each hit tagged with its enclosing symbol)
 //   cg refs <Name> --precise | cg callers <Name> --precise   (route C# to the warm Roslyn server)
 //   cg impl <Type>                                            (implementations/derived/overrides — Roslyn)
 //   cg impact <Name>                                          (refs + cross-language seam scan + checklist)
@@ -31,6 +32,21 @@ function printList(title, results) {
   for (const [f, rs] of [...byFile].sort((a, b) => b[1].length - a[1].length)) {
     const kinds = [...new Set(rs.map(r => r.kind).filter(Boolean))];
     console.log(`  ${f}  [${rs.map(r => r.line).slice(0, 12).join(',')}${rs.length > 12 ? ',…' : ''}]${kinds.length ? '  {' + kinds.join(',') + '}' : ''}`);
+  }
+}
+
+// anchored text search: each hit tagged with its enclosing symbol (string concept -> pivotable symbol)
+function printText(query, results) {
+  console.log(`Text "${query}" (${results.length}${results.length >= 200 ? '+, capped' : ''})`);
+  const byFile = new Map();
+  for (const r of results) { const k = short(r.file); (byFile.get(k) || byFile.set(k, []).get(k)).push(r); }
+  for (const [f, rs] of byFile) {
+    console.log(`  ${f}`);
+    for (const r of rs.slice(0, 20)) {
+      const enc = r.enclosing ? `   → in ${r.enclosing.name} {${r.enclosing.kind}}` : '';
+      console.log(`    ${r.line}: ${r.text}${enc}`);
+    }
+    if (rs.length > 20) console.log(`    …(${rs.length - 20} more in this file)`);
   }
 }
 
@@ -124,7 +140,11 @@ const run = async () => {
     if (CFG.tsConfig) out.ts = await get('/reindex', TSP).catch(() => null);
     return console.log(JSON.stringify(out, null, 2));
   }
-  if (!name) { console.log('usage: cg def|refs|callers|impl|impact|schema <Name> [--precise]  |  cg status|reindex'); process.exit(1); }
+  if (!name) { console.log('usage: cg def|refs|callers|impl|impact|schema|text <Name> [--precise]  |  cg status|reindex'); process.exit(1); }
+  if (cmd === 'text') {
+    const r = await get(`/text?name=${encodeURIComponent(name)}${argv.includes('--regex') ? '&regex=1' : ''}`, TREE);
+    return printText(name, r.results);
+  }
   const tag = precise ? ' [precise]' : '';
   if (cmd === 'schema') { const t = findTable(name); return t ? printSchema(t) : console.log(`no table/entity '${name}' (${SCHEMA ? SCHEMA.tables.length + ' tables loaded' : 'schema.json not configured — see README'})`); }
   if (cmd === 'def') return printList(`Definitions of ${name}${tag}`, await q('/def'));

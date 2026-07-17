@@ -92,6 +92,7 @@ if (cmd === 'serve') {
     if (p === '/def') return send(res, { name, results: g.defsByName.get(name) || [] });
     if (p === '/refs') return send(res, { name, results: g.refsByName.get(name) || [] });
     if (p === '/callers') return send(res, { name, results: g.callsByName.get(name) || [] });
+    if (p === '/text') return send(res, { name, results: g.textSearch(name, { regex: u.searchParams.get('regex') === '1', max: parseInt(u.searchParams.get('max') || '200', 10) }) });
     if (p === '/reindex') { g.defsByName.clear(); g.refsByName.clear(); g.callsByName.clear(); g.fileData.clear(); const c = await g.indexAll(); return send(res, { reindexed: c, ...g.stats() }); }
     res.writeHead(404); res.end('{}');
   });

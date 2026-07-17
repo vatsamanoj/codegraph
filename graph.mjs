@@ -87,7 +87,7 @@ export class CodeGraph {
       const t = n.type;
       if (DEF_RE.test(t) && !DEF_DENY.has(t)) {
         const isDeclarator = t.endsWith('_declarator');
-        if (!(isDeclarator && inFunc)) add(D, defs, CodeGraph.defName(n), { file, line: n.startPosition.row + 1, kind: t });
+        if (!(isDeclarator && inFunc)) add(D, defs, CodeGraph.defName(n), { file, line: n.startPosition.row + 1, endLine: n.endPosition.row + 1, kind: t });
       }
       if (ID.has(t)) add(R, refs, n.text, { file, line: n.startPosition.row + 1 });
       if (CALL_RE.test(t)) add(C, calls, CodeGraph.calleeName(n), { file, line: n.startPosition.row + 1 });
@@ -115,4 +115,43 @@ export class CodeGraph {
 
   async indexAll() { let n = 0; for (const f of this.walkFiles()) { await this.indexFile(f); n++; } return n; }
   stats() { return { files: this.fileData.size, defs: this.defsByName.size, refs: this.refsByName.size, calls: this.callsByName.size }; }
+
+  // Innermost definition whose span [line, endLine] contains hitLine — the "what function
+  // am I in?" answer the graph can give but grep can't. Falls back gracefully when a def
+  // was indexed before spans existed (endLine missing -> single-line containment only).
+  enclosingDef(file, hitLine) {
+    const fd = this.fileData.get(file); if (!fd) return null;
+    let best = null;
+    for (const d of fd.defs) {
+      const start = d.line, end = d.endLine || d.line;
+      if (start <= hitLine && end >= hitLine && (!best || d.line > best.line)) best = d;
+    }
+    return best ? { name: best.name, kind: best.kind, line: best.line } : null;
+  }
+
+  // Anchored text search: grep the indexed source for a string/literal/JSX-text/class/key
+  // that isn't an identifier (so /refs can't find it), and tag each hit with its enclosing
+  // symbol — the bridge from "a concept named as a string" to a symbol you can then pivot
+  // on with /callers or /refs. Literal substring by default (case-insensitive); regex opt-in.
+  textSearch(query, { regex = false, max = 200, ignoreCase = true } = {}) {
+    if (!query) return [];
+    let re = null;
+    if (regex) { try { re = new RegExp(query, ignoreCase ? 'i' : ''); } catch { re = null; } }
+    const needle = ignoreCase ? query.toLowerCase() : query;
+    const hits = [];
+    for (const file of this.walkFiles()) {
+      let src; try { src = fs.readFileSync(file, 'utf8'); } catch { continue; }
+      if (src.length > 1_500_000) continue;
+      if (re) { if (!re.test(src)) continue; } else if ((ignoreCase ? src.toLowerCase() : src).indexOf(needle) === -1) continue;
+      const lines = src.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+        const ok = re ? re.test(ln) : (ignoreCase ? ln.toLowerCase() : ln).includes(needle);
+        if (!ok) continue;
+        hits.push({ file, line: i + 1, text: ln.trim().slice(0, 200), enclosing: this.enclosingDef(file, i + 1) });
+        if (hits.length >= max) return hits;
+      }
+    }
+    return hits;
+  }
 }

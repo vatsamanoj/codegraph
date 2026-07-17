@@ -12,6 +12,8 @@ Three layers, all localhost:
 
 One `--precise` flag fans out to whichever precise servers exist and merges the result — so a single query spans your backend (C#) and frontend (TS) at once. It boots when your editor/agent session starts, keeps the index current via file-watchers, and shuts down when the session ends.
 
+> **Get more out of it over time:** [AUDIT-PROTOCOL.md](AUDIT-PROTOCOL.md) is a lightweight per-task ritual — query codegraph first, turn every real gap into a new capability, and end with an honest "what did this save me?" scorecard. Following it makes codegraph compound to *your* codebase and shows exactly where it earns its keep. Recommended for anyone using codegraph (especially with an AI coding agent).
+
 ## Requirements
 - **Node.js 18+** (the core; no native build — tree-sitter runs as WASM; ts-morph is pure JS).
 - **.NET SDK** *(optional)* — only to enable the precise C# layer when the repo has a `.sln`.
@@ -41,7 +43,19 @@ node cg.mjs refs <Name> --precise     # references (type-exact: C# via Roslyn + 
 node cg.mjs callers <Name> --precise  # exact callers
 node cg.mjs impl <Type>               # implementations / derived / overrides (C# + TS)
 node cg.mjs impact <Name>             # refs + cross-language seam scan + change checklist (add --precise)
+node cg.mjs text <string> [--regex]   # grep source; EACH hit tagged with its enclosing symbol
 ```
+
+### `text` — the entry-point bridge (string concept → pivotable symbol)
+`def`/`refs`/`callers` are keyed by **identifier name**, so they can't find a *concept named as a string*: a UI label (`"Narration"`), a CSS class (`tp-vch-date-input`), an i18n key, an error code, JSX text. Those are where real bug-hunting *starts* ("after save, focus stays in Narration"). Plain grep finds the line but not *which function you're in*, so you then have to read around each hit. `cg text` does both at once — it greps the indexed source and tags every hit with its **enclosing definition** (the innermost def whose span contains the line):
+
+```
+$ cg text tp-vch-date-input
+  src/components/vouchers/useVoucherModes.ts
+    277: const dateEl = document.querySelector('.tp-vch-date-input') …   → in useVoucherModes {function_declaration}
+```
+
+So the workflow is: **`cg text "<the string from the report>"` → read off the enclosing symbol → `cg callers`/`refs`/`impact` that symbol.** Literal substring by default (case-insensitive); `--regex` opts into a JS regexp.
 
 `impact` also greps config/schema/serialization files (`.json`, `.sql`, `.proto`, `.yaml`, …) for the name, because the graph can't link string/JSON/DDL seams — the boundaries where a rename compiles on both sides but breaks at runtime.
 
